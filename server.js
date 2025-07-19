@@ -48,26 +48,30 @@ function buildSearchQuery(params) {
   if (params.limit) queryParams.append('limit', params.limit);
   if (params.offset) queryParams.append('offset', params.offset);
   
-  // Search filters
+  // Search filters - use individual field searches
   if (params.search) {
-    // For text search across multiple fields
-    queryParams.append('or', `(title.ilike.%${params.search}%,description.ilike.%${params.search}%,summary.ilike.%${params.search}%)`);
+    // For text search, we'll use individual field searches
+    // CustomGPT can use specific field searches instead of complex OR queries
+    queryParams.append('call_title', `ilike.%${params.search}%`);
   }
   
   // Specific field filters
-  if (params.status) queryParams.append('status', `eq.${params.status}`);
-  if (params.type) queryParams.append('type', `eq.${params.type}`);
-  if (params.account) queryParams.append('account_name', `ilike.%${params.account}%`);
-  if (params.contact) queryParams.append('contact_name', `ilike.%${params.contact}%`);
-  if (params.deal) queryParams.append('deal_name', `ilike.%${params.deal}%`);
+  if (params.status) queryParams.append('call_status', `eq.${params.status}`);
+  if (params.type) queryParams.append('call_type', `eq.${params.type}`);
+  if (params.account) queryParams.append('crm_account_name', `ilike.%${params.account}%`);
+  if (params.contact) queryParams.append('participant_names', `ilike.%${params.contact}%`);
+  if (params.deal) queryParams.append('crm_deal_name', `ilike.%${params.deal}%`);
   
   // Date filters
-  if (params.date_from) queryParams.append('created_at', `gte.${params.date_from}`);
-  if (params.date_to) queryParams.append('created_at', `lte.${params.date_to}`);
+  if (params.date_from) queryParams.append('call_time', `gte.${params.date_from}`);
+  if (params.date_to) queryParams.append('call_time', `lte.${params.date_to}`);
   
   // Ordering
   if (params.order_by) {
     queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
+  } else {
+    // Default ordering by call_time desc
+    queryParams.append('order', 'call_time.desc');
   }
   
   return queryParams.toString();

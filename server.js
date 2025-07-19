@@ -13,6 +13,14 @@ app.use(express.json());
 const SUPABASE_URL = 'https://jwpgtjibqvealvbdehdn.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp3cGd0amlicXZlYWx2YmRlaGRuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTI0MzU4NzQsImV4cCI6MjA2ODAxMTg3NH0.RH0PxIe1wic1wXhaivoCTU4J3W2-7jb14jMYouWXYAQ';
 
+// CustomGPT Payload Limits
+const CUSTOMGPT_LIMITS = {
+  MAX_RESPONSE_SIZE: 2 * 1024 * 1024, // 2MB
+  MAX_TOKENS: 16000,
+  MAX_RECORDS_PER_RESPONSE: 10, // Conservative limit
+  MAX_TEXT_LENGTH: 150 // Characters per text field
+};
+
 // Helper function to proxy requests to Supabase
 async function proxyToSupabase(tableName, queryParams = '') {
   try {
@@ -44,8 +52,10 @@ async function proxyToSupabase(tableName, queryParams = '') {
 function buildSearchQuery(params, tableName) {
   const queryParams = new URLSearchParams();
   
-  // Standard pagination
-  if (params.limit) queryParams.append('limit', params.limit);
+  // Enforce CustomGPT limits
+  const limit = Math.min(params.limit || CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE, CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE);
+  queryParams.append('limit', limit);
+  
   if (params.offset) queryParams.append('offset', params.offset);
   
   // Table-specific search and filters
@@ -105,8 +115,15 @@ function buildSearchQuery(params, tableName) {
   return queryParams.toString();
 }
 
-// Helper function to simplify data for CustomGPT
-function simplifyData(data, tableType) {
+// Helper function to truncate text for CustomGPT
+function truncateText(text, maxLength = CUSTOMGPT_LIMITS.MAX_TEXT_LENGTH) {
+  if (!text || typeof text !== 'string') return null;
+  if (text.length <= maxLength) return text;
+  return text.substring(0, maxLength) + '...';
+}
+
+// Helper function to optimize data for CustomGPT
+function optimizeForCustomGPT(data, tableType) {
   if (!Array.isArray(data)) {
     return data;
   }
@@ -115,70 +132,68 @@ function simplifyData(data, tableType) {
     switch (tableType) {
       case 'sfdc_accounts':
         return {
-          account_id: item.account_id,
-          account_name: item.account_name,
-          industry: item.industry,
-          annual_revenue: item.annual_revenue,
-          website: item.website,
+          id: item.account_id,
+          name: truncateText(item.account_name, 50),
+          industry: truncateText(item.industry, 30),
+          revenue: item.annual_revenue,
+          website: truncateText(item.website, 30),
           employees: item.employees,
-          billing_city: item.billing_city,
-          billing_state: item.billing_state_province,
-          billing_country: item.billing_country,
-          description: item.description?.substring(0, 200) + '...' || null
+          city: truncateText(item.billing_city, 30),
+          state: truncateText(item.billing_state_province, 20),
+          country: truncateText(item.billing_country, 20)
         };
       
       case 'sfdc_contacts':
         return {
-          contact_id: item.contact_id,
-          first_name: item.first_name,
-          last_name: item.last_name,
-          email: item.email,
-          phone: item.phone,
-          title: item.title,
-          account_name: item.account_name,
-          department: item.department
+          id: item.contact_id,
+          first_name: truncateText(item.first_name, 30),
+          last_name: truncateText(item.last_name, 30),
+          email: truncateText(item.email, 50),
+          phone: truncateText(item.phone, 20),
+          title: truncateText(item.title, 40),
+          account: truncateText(item.account_name, 40),
+          dept: truncateText(item.department, 30)
         };
       
       case 'sfdc_leads':
         return {
-          lead_id: item.lead_id,
-          first_name: item.first_name,
-          last_name: item.last_name,
-          email: item.email,
-          phone: item.phone,
-          company: item.company,
-          title: item.title,
-          status: item.status,
-          source: item.lead_source
+          id: item.lead_id,
+          first_name: truncateText(item.first_name, 30),
+          last_name: truncateText(item.last_name, 30),
+          email: truncateText(item.email, 50),
+          phone: truncateText(item.phone, 20),
+          company: truncateText(item.company, 40),
+          title: truncateText(item.title, 40),
+          status: truncateText(item.status, 20),
+          source: truncateText(item.lead_source, 20)
         };
       
       case 'sfdc_opportunities':
         return {
-          opportunity_id: item.opportunity_id,
-          opportunity_name: item.opportunity_name,
-          account_name: item.account_name,
+          id: item.opportunity_id,
+          name: truncateText(item.opportunity_name, 60),
+          account: truncateText(item.account_name, 40),
           amount: item.amount,
-          stage: item.stage_name,
+          stage: truncateText(item.stage_name, 30),
           close_date: item.close_date,
           probability: item.probability,
-          type: item.type
+          type: truncateText(item.type, 20)
         };
       
       case 'clari_calls':
         return {
-          call_id: item.call_id,
-          call_title: item.call_title,
-          call_status: item.call_status,
-          call_type: item.call_type,
-          call_time: item.call_time,
-          call_duration_seconds: item.call_duration_seconds,
-          participant_count: item.participant_count,
-          participant_names: item.participant_names,
-          full_summary: item.full_summary?.substring(0, 500) + '...' || null,
-          key_takeaways: item.key_takeaways?.substring(0, 300) + '...' || null,
-          crm_account_name: item.crm_account_name,
-          crm_deal_name: item.crm_deal_name,
-          created_at: item.created_at
+          id: item.call_id,
+          title: truncateText(item.call_title, 80),
+          status: truncateText(item.call_status, 20),
+          type: truncateText(item.call_type, 20),
+          time: item.call_time,
+          duration: item.call_duration_seconds,
+          participants: item.participant_count,
+          names: truncateText(item.participant_names, 100),
+          summary: truncateText(item.full_summary, 120),
+          takeaways: truncateText(item.key_takeaways, 100),
+          account: truncateText(item.crm_account_name, 40),
+          deal: truncateText(item.crm_deal_name, 40)
         };
       
       default:
@@ -187,10 +202,26 @@ function simplifyData(data, tableType) {
   });
 }
 
+// Helper function to estimate response size
+function estimateResponseSize(data) {
+  const jsonString = JSON.stringify(data);
+  return {
+    size: jsonString.length,
+    tokens: Math.ceil(jsonString.length / 4), // Rough estimate: 1 token ≈ 4 characters
+    isWithinLimits: jsonString.length < CUSTOMGPT_LIMITS.MAX_RESPONSE_SIZE
+  };
+}
+
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({
-    message: 'Enhanced Supabase Proxy API - CustomGPT Compatible',
+    message: 'CustomGPT-Optimized Supabase Proxy API',
+    limits: {
+      max_response_size: '2MB',
+      max_tokens: '16,000',
+      max_records_per_response: CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE,
+      max_text_length: CUSTOMGPT_LIMITS.MAX_TEXT_LENGTH
+    },
     endpoints: [
       '/api/clari-calls',
       '/api/sfdc-accounts', 
@@ -199,162 +230,124 @@ app.get('/', (req, res) => {
       '/api/sfdc-opportunities'
     ],
     search_examples: [
-      '?search=revenue&limit=10',
+      '?search=revenue&limit=5',
       '?account=Adobe&status=completed',
-      '?date_from=2024-01-01&date_to=2024-12-31',
-      '?contact=John&type=discovery'
+      '?date_from=2024-01-01&limit=3'
     ],
-    note: 'Enhanced with search, filtering, and relationship support'
+    note: 'Optimized for CustomGPT payload limits'
   });
 });
 
-// Enhanced Clari Calls endpoint with search
+// Enhanced Clari Calls endpoint with CustomGPT optimization
 app.get('/api/clari-calls', async (req, res) => {
   try {
     const queryParams = buildSearchQuery(req.query, 'clari_calls');
     const data = await proxyToSupabase('clari_calls', queryParams);
-    const simplifiedData = simplifyData(data, 'clari_calls');
-    res.json(simplifiedData);
+    const optimizedData = optimizeForCustomGPT(data, 'clari_calls');
+    
+    const sizeInfo = estimateResponseSize(optimizedData);
+    
+    res.json({
+      data: optimizedData,
+      meta: {
+        count: optimizedData.length,
+        estimated_size: `${(sizeInfo.size / 1024).toFixed(1)}KB`,
+        estimated_tokens: sizeInfo.tokens,
+        within_limits: sizeInfo.isWithinLimits
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Enhanced SFDC Accounts endpoint with search
+// Enhanced SFDC Accounts endpoint with CustomGPT optimization
 app.get('/api/sfdc-accounts', async (req, res) => {
   try {
     const queryParams = buildSearchQuery(req.query, 'sfdc_accounts');
     const data = await proxyToSupabase('sfdc_accounts', queryParams);
-    const simplifiedData = simplifyData(data, 'sfdc_accounts');
-    res.json(simplifiedData);
+    const optimizedData = optimizeForCustomGPT(data, 'sfdc_accounts');
+    
+    const sizeInfo = estimateResponseSize(optimizedData);
+    
+    res.json({
+      data: optimizedData,
+      meta: {
+        count: optimizedData.length,
+        estimated_size: `${(sizeInfo.size / 1024).toFixed(1)}KB`,
+        estimated_tokens: sizeInfo.tokens,
+        within_limits: sizeInfo.isWithinLimits
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Enhanced SFDC Contacts endpoint with search
+// Enhanced SFDC Contacts endpoint with CustomGPT optimization
 app.get('/api/sfdc-contacts', async (req, res) => {
   try {
     const queryParams = buildSearchQuery(req.query, 'sfdc_contacts');
     const data = await proxyToSupabase('sfdc_contacts', queryParams);
-    const simplifiedData = simplifyData(data, 'sfdc_contacts');
-    res.json(simplifiedData);
+    const optimizedData = optimizeForCustomGPT(data, 'sfdc_contacts');
+    
+    const sizeInfo = estimateResponseSize(optimizedData);
+    
+    res.json({
+      data: optimizedData,
+      meta: {
+        count: optimizedData.length,
+        estimated_size: `${(sizeInfo.size / 1024).toFixed(1)}KB`,
+        estimated_tokens: sizeInfo.tokens,
+        within_limits: sizeInfo.isWithinLimits
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Enhanced SFDC Leads endpoint with search
+// Enhanced SFDC Leads endpoint with CustomGPT optimization
 app.get('/api/sfdc-leads', async (req, res) => {
   try {
     const queryParams = buildSearchQuery(req.query, 'sfdc_leads');
     const data = await proxyToSupabase('sfdc_leads', queryParams);
-    const simplifiedData = simplifyData(data, 'sfdc_leads');
-    res.json(simplifiedData);
+    const optimizedData = optimizeForCustomGPT(data, 'sfdc_leads');
+    
+    const sizeInfo = estimateResponseSize(optimizedData);
+    
+    res.json({
+      data: optimizedData,
+      meta: {
+        count: optimizedData.length,
+        estimated_size: `${(sizeInfo.size / 1024).toFixed(1)}KB`,
+        estimated_tokens: sizeInfo.tokens,
+        within_limits: sizeInfo.isWithinLimits
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Enhanced SFDC Opportunities endpoint with search
+// Enhanced SFDC Opportunities endpoint with CustomGPT optimization
 app.get('/api/sfdc-opportunities', async (req, res) => {
   try {
     const queryParams = buildSearchQuery(req.query, 'sfdc_opportunities');
     const data = await proxyToSupabase('sfdc_opportunities', queryParams);
-    const simplifiedData = simplifyData(data, 'sfdc_opportunities');
-    res.json(simplifiedData);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Relationship endpoint - get related data across tables
-app.get('/api/relationships/:type', async (req, res) => {
-  try {
-    const { type } = req.params;
-    const { account_id, contact_id, opportunity_id, call_id } = req.query;
+    const optimizedData = optimizeForCustomGPT(data, 'sfdc_opportunities');
     
-    let results = {};
+    const sizeInfo = estimateResponseSize(optimizedData);
     
-    switch (type) {
-      case 'account':
-        if (account_id) {
-          // Get account details
-          const accountData = await proxyToSupabase('sfdc_accounts', `account_id=eq.${account_id}`);
-          results.account = simplifyData(accountData, 'sfdc_accounts')[0];
-          
-          // Get related contacts
-          const contactsData = await proxyToSupabase('sfdc_contacts', `account_id=eq.${account_id}`);
-          results.contacts = simplifyData(contactsData, 'sfdc_contacts');
-          
-          // Get related opportunities
-          const opportunitiesData = await proxyToSupabase('sfdc_opportunities', `account_id=eq.${account_id}`);
-          results.opportunities = simplifyData(opportunitiesData, 'sfdc_opportunities');
-          
-          // Get related calls
-          const callsData = await proxyToSupabase('clari_calls', `crm_account_id=eq.${account_id}`);
-          results.calls = simplifyData(callsData, 'clari_calls');
-        }
-        break;
-        
-      case 'contact':
-        if (contact_id) {
-          // Get contact details
-          const contactData = await proxyToSupabase('sfdc_contacts', `contact_id=eq.${contact_id}`);
-          results.contact = simplifyData(contactData, 'sfdc_contacts')[0];
-          
-          // Get related account
-          if (results.contact?.account_id) {
-            const accountData = await proxyToSupabase('sfdc_accounts', `account_id=eq.${results.contact.account_id}`);
-            results.account = simplifyData(accountData, 'sfdc_accounts')[0];
-          }
-          
-          // Get related calls
-          const callsData = await proxyToSupabase('clari_calls', `participant_names=ilike.%${results.contact?.first_name}%`);
-          results.calls = simplifyData(callsData, 'clari_calls');
-        }
-        break;
-        
-      case 'opportunity':
-        if (opportunity_id) {
-          // Get opportunity details
-          const opportunityData = await proxyToSupabase('sfdc_opportunities', `opportunity_id=eq.${opportunity_id}`);
-          results.opportunity = simplifyData(opportunityData, 'sfdc_opportunities')[0];
-          
-          // Get related account
-          if (results.opportunity?.account_id) {
-            const accountData = await proxyToSupabase('sfdc_accounts', `account_id=eq.${results.opportunity.account_id}`);
-            results.account = simplifyData(accountData, 'sfdc_accounts')[0];
-          }
-          
-          // Get related calls
-          const callsData = await proxyToSupabase('clari_calls', `crm_deal_id=eq.${opportunity_id}`);
-          results.calls = simplifyData(callsData, 'clari_calls');
-        }
-        break;
-        
-      case 'call':
-        if (call_id) {
-          // Get call details
-          const callData = await proxyToSupabase('clari_calls', `call_id=eq.${call_id}`);
-          results.call = simplifyData(callData, 'clari_calls')[0];
-          
-          // Get related account if available
-          if (results.call?.crm_account_name) {
-            const accountData = await proxyToSupabase('sfdc_accounts', `account_name=ilike.%${results.call.crm_account_name}%`);
-            results.account = simplifyData(accountData, 'sfdc_accounts')[0];
-          }
-          
-          // Get related opportunity if available
-          if (results.call?.crm_deal_name) {
-            const opportunityData = await proxyToSupabase('sfdc_opportunities', `opportunity_name=ilike.%${results.call.crm_deal_name}%`);
-            results.opportunity = simplifyData(opportunityData, 'sfdc_opportunities')[0];
-          }
-        }
-        break;
-    }
-    
-    res.json(results);
+    res.json({
+      data: optimizedData,
+      meta: {
+        count: optimizedData.length,
+        estimated_size: `${(sizeInfo.size / 1024).toFixed(1)}KB`,
+        estimated_tokens: sizeInfo.tokens,
+        within_limits: sizeInfo.isWithinLimits
+      }
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -362,13 +355,12 @@ app.get('/api/relationships/:type', async (req, res) => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Enhanced Supabase Proxy API running on port ${PORT}`);
+  console.log(`🚀 CustomGPT-Optimized API running on port ${PORT}`);
   console.log(`📋 Available endpoints:`);
-  console.log(`   • GET /api/clari-calls (with search & filters)`);
-  console.log(`   • GET /api/sfdc-accounts (with search & filters)`);
-  console.log(`   • GET /api/sfdc-contacts (with search & filters)`);
-  console.log(`   • GET /api/sfdc-leads (with search & filters)`);
-  console.log(`   • GET /api/sfdc-opportunities (with search & filters)`);
-  console.log(`   • GET /api/relationships/:type (account/contact/opportunity/call)`);
-  console.log(`\n🎯 Enhanced for CustomGPT - search, filter, and relationships!`);
+  console.log(`   • GET /api/clari-calls (max ${CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE} records)`);
+  console.log(`   • GET /api/sfdc-accounts (max ${CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE} records)`);
+  console.log(`   • GET /api/sfdc-contacts (max ${CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE} records)`);
+  console.log(`   • GET /api/sfdc-leads (max ${CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE} records)`);
+  console.log(`   • GET /api/sfdc-opportunities (max ${CUSTOMGPT_LIMITS.MAX_RECORDS_PER_RESPONSE} records)`);
+  console.log(`\n🎯 Optimized for CustomGPT: 2MB limit, 16k tokens, ${CUSTOMGPT_LIMITS.MAX_TEXT_LENGTH} char text fields`);
 }); 

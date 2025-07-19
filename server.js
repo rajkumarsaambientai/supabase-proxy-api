@@ -41,37 +41,75 @@ async function proxyToSupabase(tableName, queryParams = '') {
 }
 
 // Helper function to build search queries
-function buildSearchQuery(params) {
+function buildSearchQuery(params, tableName) {
   const queryParams = new URLSearchParams();
   
   // Standard pagination
   if (params.limit) queryParams.append('limit', params.limit);
   if (params.offset) queryParams.append('offset', params.offset);
   
-  // Search filters - use individual field searches
-  if (params.search) {
-    // For text search, we'll use individual field searches
-    // CustomGPT can use specific field searches instead of complex OR queries
-    queryParams.append('call_title', `ilike.%${params.search}%`);
-  }
-  
-  // Specific field filters
-  if (params.status) queryParams.append('call_status', `eq.${params.status}`);
-  if (params.type) queryParams.append('call_type', `eq.${params.type}`);
-  if (params.account) queryParams.append('crm_account_name', `ilike.%${params.account}%`);
-  if (params.contact) queryParams.append('participant_names', `ilike.%${params.contact}%`);
-  if (params.deal) queryParams.append('crm_deal_name', `ilike.%${params.deal}%`);
-  
-  // Date filters
-  if (params.date_from) queryParams.append('call_time', `gte.${params.date_from}`);
-  if (params.date_to) queryParams.append('call_time', `lte.${params.date_to}`);
-  
-  // Ordering
-  if (params.order_by) {
-    queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
-  } else {
-    // Default ordering by call_time desc
-    queryParams.append('order', 'call_time.desc');
+  // Table-specific search and filters
+  switch (tableName) {
+    case 'clari_calls':
+      if (params.search) queryParams.append('call_title', `ilike.%${params.search}%`);
+      if (params.status) queryParams.append('call_status', `eq.${params.status}`);
+      if (params.type) queryParams.append('call_type', `eq.${params.type}`);
+      if (params.account) queryParams.append('crm_account_name', `ilike.%${params.account}%`);
+      if (params.contact) queryParams.append('participant_names', `ilike.%${params.contact}%`);
+      if (params.deal) queryParams.append('crm_deal_name', `ilike.%${params.deal}%`);
+      if (params.date_from) queryParams.append('call_time', `gte.${params.date_from}`);
+      if (params.date_to) queryParams.append('call_time', `lte.${params.date_to}`);
+      if (params.order_by) {
+        queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
+      } else {
+        queryParams.append('order', 'call_time.desc');
+      }
+      break;
+      
+    case 'sfdc_accounts':
+      if (params.search) queryParams.append('account_name', `ilike.%${params.search}%`);
+      if (params.industry) queryParams.append('industry', `eq.${params.industry}`);
+      if (params.revenue_min) queryParams.append('annual_revenue', `gte.${params.revenue_min}`);
+      if (params.order_by) {
+        queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
+      } else {
+        queryParams.append('order', 'account_name.asc');
+      }
+      break;
+      
+    case 'sfdc_contacts':
+      if (params.search) queryParams.append('first_name', `ilike.%${params.search}%`);
+      if (params.account) queryParams.append('account_name', `ilike.%${params.account}%`);
+      if (params.title) queryParams.append('title', `ilike.%${params.title}%`);
+      if (params.order_by) {
+        queryParams.append('order', `${params.order_by}.${params.order_direction || 'asc'}`);
+      } else {
+        queryParams.append('order', 'last_name.asc');
+      }
+      break;
+      
+    case 'sfdc_opportunities':
+      if (params.search) queryParams.append('opportunity_name', `ilike.%${params.search}%`);
+      if (params.stage) queryParams.append('stage_name', `eq.${params.stage}`);
+      if (params.account) queryParams.append('account_name', `ilike.%${params.account}%`);
+      if (params.amount_min) queryParams.append('amount', `gte.${params.amount_min}`);
+      if (params.order_by) {
+        queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
+      } else {
+        queryParams.append('order', 'amount.desc');
+      }
+      break;
+      
+    case 'sfdc_leads':
+      if (params.search) queryParams.append('first_name', `ilike.%${params.search}%`);
+      if (params.status) queryParams.append('status', `eq.${params.status}`);
+      if (params.source) queryParams.append('lead_source', `eq.${params.source}`);
+      if (params.order_by) {
+        queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
+      } else {
+        queryParams.append('order', 'created_date.desc');
+      }
+      break;
   }
   
   return queryParams.toString();
@@ -183,7 +221,7 @@ app.get('/', (req, res) => {
 // Enhanced Clari Calls endpoint with search
 app.get('/api/clari-calls', async (req, res) => {
   try {
-    const queryParams = buildSearchQuery(req.query);
+    const queryParams = buildSearchQuery(req.query, 'clari_calls');
     const data = await proxyToSupabase('clari_calls', queryParams);
     const simplifiedData = simplifyData(data, 'clari_calls');
     res.json(simplifiedData);
@@ -195,7 +233,7 @@ app.get('/api/clari-calls', async (req, res) => {
 // Enhanced SFDC Accounts endpoint with search
 app.get('/api/sfdc-accounts', async (req, res) => {
   try {
-    const queryParams = buildSearchQuery(req.query);
+    const queryParams = buildSearchQuery(req.query, 'sfdc_accounts');
     const data = await proxyToSupabase('sfdc_accounts', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_accounts');
     res.json(simplifiedData);
@@ -207,7 +245,7 @@ app.get('/api/sfdc-accounts', async (req, res) => {
 // Enhanced SFDC Contacts endpoint with search
 app.get('/api/sfdc-contacts', async (req, res) => {
   try {
-    const queryParams = buildSearchQuery(req.query);
+    const queryParams = buildSearchQuery(req.query, 'sfdc_contacts');
     const data = await proxyToSupabase('sfdc_contacts', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_contacts');
     res.json(simplifiedData);
@@ -219,7 +257,7 @@ app.get('/api/sfdc-contacts', async (req, res) => {
 // Enhanced SFDC Leads endpoint with search
 app.get('/api/sfdc-leads', async (req, res) => {
   try {
-    const queryParams = buildSearchQuery(req.query);
+    const queryParams = buildSearchQuery(req.query, 'sfdc_leads');
     const data = await proxyToSupabase('sfdc_leads', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_leads');
     res.json(simplifiedData);
@@ -231,7 +269,7 @@ app.get('/api/sfdc-leads', async (req, res) => {
 // Enhanced SFDC Opportunities endpoint with search
 app.get('/api/sfdc-opportunities', async (req, res) => {
   try {
-    const queryParams = buildSearchQuery(req.query);
+    const queryParams = buildSearchQuery(req.query, 'sfdc_opportunities');
     const data = await proxyToSupabase('sfdc_opportunities', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_opportunities');
     res.json(simplifiedData);

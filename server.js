@@ -40,6 +40,87 @@ async function proxyToSupabase(tableName, queryParams = '') {
   }
 }
 
+// Helper function to simplify data for CustomGPT
+function simplifyData(data, tableType) {
+  if (!Array.isArray(data)) {
+    return data;
+  }
+
+  return data.map(item => {
+    switch (tableType) {
+      case 'sfdc_accounts':
+        return {
+          account_id: item.account_id,
+          account_name: item.account_name,
+          industry: item.industry,
+          annual_revenue: item.annual_revenue,
+          website: item.website,
+          employees: item.employees,
+          billing_city: item.billing_city,
+          billing_state: item.billing_state_province,
+          billing_country: item.billing_country,
+          description: item.description?.substring(0, 200) + '...' || null
+        };
+      
+      case 'sfdc_contacts':
+        return {
+          contact_id: item.contact_id,
+          first_name: item.first_name,
+          last_name: item.last_name,
+          email: item.email,
+          phone: item.phone,
+          title: item.title,
+          account_name: item.account_name,
+          department: item.department
+        };
+      
+      case 'sfdc_leads':
+        return {
+          lead_id: item.lead_id,
+          first_name: item.first_name,
+          last_name: item.last_name,
+          email: item.email,
+          phone: item.phone,
+          company: item.company,
+          title: item.title,
+          status: item.status,
+          source: item.lead_source
+        };
+      
+      case 'sfdc_opportunities':
+        return {
+          opportunity_id: item.opportunity_id,
+          opportunity_name: item.opportunity_name,
+          account_name: item.account_name,
+          amount: item.amount,
+          stage: item.stage_name,
+          close_date: item.close_date,
+          probability: item.probability,
+          type: item.type
+        };
+      
+      case 'clari_calls':
+        return {
+          call_id: item.call_id,
+          call_title: item.call_title,
+          call_status: item.call_status,
+          call_type: item.call_type,
+          call_time: item.call_time,
+          call_duration_seconds: item.call_duration_seconds,
+          participant_count: item.participant_count,
+          participant_names: item.participant_names,
+          full_summary: item.full_summary?.substring(0, 300) + '...' || null,
+          key_takeaways: item.key_takeaways?.substring(0, 200) + '...' || null,
+          crm_account_name: item.crm_account_name,
+          crm_deal_name: item.crm_deal_name
+        };
+      
+      default:
+        return item;
+    }
+  });
+}
+
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({
@@ -51,7 +132,8 @@ app.get('/', (req, res) => {
       '/api/sfdc-leads',
       '/api/sfdc-opportunities'
     ],
-    usage: 'Add query parameters like ?limit=10&select=*'
+    usage: 'Add query parameters like ?limit=10&select=*',
+    note: 'Responses are simplified for CustomGPT compatibility'
   });
 });
 
@@ -60,7 +142,8 @@ app.get('/api/clari-calls', async (req, res) => {
   try {
     const queryParams = new URLSearchParams(req.query).toString();
     const data = await proxyToSupabase('clari_calls', queryParams);
-    res.json(data);
+    const simplifiedData = simplifyData(data, 'clari_calls');
+    res.json(simplifiedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -71,7 +154,8 @@ app.get('/api/sfdc-accounts', async (req, res) => {
   try {
     const queryParams = new URLSearchParams(req.query).toString();
     const data = await proxyToSupabase('sfdc_accounts', queryParams);
-    res.json(data);
+    const simplifiedData = simplifyData(data, 'sfdc_accounts');
+    res.json(simplifiedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -82,7 +166,8 @@ app.get('/api/sfdc-contacts', async (req, res) => {
   try {
     const queryParams = new URLSearchParams(req.query).toString();
     const data = await proxyToSupabase('sfdc_contacts', queryParams);
-    res.json(data);
+    const simplifiedData = simplifyData(data, 'sfdc_contacts');
+    res.json(simplifiedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -93,7 +178,8 @@ app.get('/api/sfdc-leads', async (req, res) => {
   try {
     const queryParams = new URLSearchParams(req.query).toString();
     const data = await proxyToSupabase('sfdc_leads', queryParams);
-    res.json(data);
+    const simplifiedData = simplifyData(data, 'sfdc_leads');
+    res.json(simplifiedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -104,7 +190,8 @@ app.get('/api/sfdc-opportunities', async (req, res) => {
   try {
     const queryParams = new URLSearchParams(req.query).toString();
     const data = await proxyToSupabase('sfdc_opportunities', queryParams);
-    res.json(data);
+    const simplifiedData = simplifyData(data, 'sfdc_opportunities');
+    res.json(simplifiedData);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -119,5 +206,5 @@ app.listen(PORT, () => {
   console.log(`   • GET /api/sfdc-contacts`);
   console.log(`   • GET /api/sfdc-leads`);
   console.log(`   • GET /api/sfdc-opportunities`);
-  console.log(`\n🎯 CustomGPT compatible - no headers required!`);
+  console.log(`\n🎯 CustomGPT compatible - simplified responses!`);
 }); 

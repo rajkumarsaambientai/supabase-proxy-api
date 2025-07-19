@@ -61,8 +61,6 @@ function buildSearchQuery(params, tableName) {
       if (params.date_to) queryParams.append('call_time', `lte.${params.date_to}`);
       if (params.order_by) {
         queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
-      } else {
-        queryParams.append('order', 'call_time.desc');
       }
       break;
       
@@ -72,8 +70,6 @@ function buildSearchQuery(params, tableName) {
       if (params.revenue_min) queryParams.append('annual_revenue', `gte.${params.revenue_min}`);
       if (params.order_by) {
         queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
-      } else {
-        queryParams.append('order', 'account_name.asc');
       }
       break;
       
@@ -83,8 +79,6 @@ function buildSearchQuery(params, tableName) {
       if (params.title) queryParams.append('title', `ilike.%${params.title}%`);
       if (params.order_by) {
         queryParams.append('order', `${params.order_by}.${params.order_direction || 'asc'}`);
-      } else {
-        queryParams.append('order', 'last_name.asc');
       }
       break;
       
@@ -95,8 +89,6 @@ function buildSearchQuery(params, tableName) {
       if (params.amount_min) queryParams.append('amount', `gte.${params.amount_min}`);
       if (params.order_by) {
         queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
-      } else {
-        queryParams.append('order', 'amount.desc');
       }
       break;
       
@@ -106,8 +98,6 @@ function buildSearchQuery(params, tableName) {
       if (params.source) queryParams.append('lead_source', `eq.${params.source}`);
       if (params.order_by) {
         queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
-      } else {
-        queryParams.append('order', 'created_date.desc');
       }
       break;
   }

@@ -40,6 +40,39 @@ async function proxyToSupabase(tableName, queryParams = '') {
   }
 }
 
+// Helper function to build search queries
+function buildSearchQuery(params) {
+  const queryParams = new URLSearchParams();
+  
+  // Standard pagination
+  if (params.limit) queryParams.append('limit', params.limit);
+  if (params.offset) queryParams.append('offset', params.offset);
+  
+  // Search filters
+  if (params.search) {
+    // For text search across multiple fields
+    queryParams.append('or', `(title.ilike.%${params.search}%,description.ilike.%${params.search}%,summary.ilike.%${params.search}%)`);
+  }
+  
+  // Specific field filters
+  if (params.status) queryParams.append('status', `eq.${params.status}`);
+  if (params.type) queryParams.append('type', `eq.${params.type}`);
+  if (params.account) queryParams.append('account_name', `ilike.%${params.account}%`);
+  if (params.contact) queryParams.append('contact_name', `ilike.%${params.contact}%`);
+  if (params.deal) queryParams.append('deal_name', `ilike.%${params.deal}%`);
+  
+  // Date filters
+  if (params.date_from) queryParams.append('created_at', `gte.${params.date_from}`);
+  if (params.date_to) queryParams.append('created_at', `lte.${params.date_to}`);
+  
+  // Ordering
+  if (params.order_by) {
+    queryParams.append('order', `${params.order_by}.${params.order_direction || 'desc'}`);
+  }
+  
+  return queryParams.toString();
+}
+
 // Helper function to simplify data for CustomGPT
 function simplifyData(data, tableType) {
   if (!Array.isArray(data)) {
@@ -109,10 +142,11 @@ function simplifyData(data, tableType) {
           call_duration_seconds: item.call_duration_seconds,
           participant_count: item.participant_count,
           participant_names: item.participant_names,
-          full_summary: item.full_summary?.substring(0, 300) + '...' || null,
-          key_takeaways: item.key_takeaways?.substring(0, 200) + '...' || null,
+          full_summary: item.full_summary?.substring(0, 500) + '...' || null,
+          key_takeaways: item.key_takeaways?.substring(0, 300) + '...' || null,
           crm_account_name: item.crm_account_name,
-          crm_deal_name: item.crm_deal_name
+          crm_deal_name: item.crm_deal_name,
+          created_at: item.created_at
         };
       
       default:
@@ -124,7 +158,7 @@ function simplifyData(data, tableType) {
 // Health check endpoint
 app.get('/', (req, res) => {
   res.json({
-    message: 'Supabase Proxy API - CustomGPT Compatible',
+    message: 'Enhanced Supabase Proxy API - CustomGPT Compatible',
     endpoints: [
       '/api/clari-calls',
       '/api/sfdc-accounts', 
@@ -132,15 +166,20 @@ app.get('/', (req, res) => {
       '/api/sfdc-leads',
       '/api/sfdc-opportunities'
     ],
-    usage: 'Add query parameters like ?limit=10&select=*',
-    note: 'Responses are simplified for CustomGPT compatibility'
+    search_examples: [
+      '?search=revenue&limit=10',
+      '?account=Adobe&status=completed',
+      '?date_from=2024-01-01&date_to=2024-12-31',
+      '?contact=John&type=discovery'
+    ],
+    note: 'Enhanced with search, filtering, and relationship support'
   });
 });
 
-// Clari Calls endpoint
+// Enhanced Clari Calls endpoint with search
 app.get('/api/clari-calls', async (req, res) => {
   try {
-    const queryParams = new URLSearchParams(req.query).toString();
+    const queryParams = buildSearchQuery(req.query);
     const data = await proxyToSupabase('clari_calls', queryParams);
     const simplifiedData = simplifyData(data, 'clari_calls');
     res.json(simplifiedData);
@@ -149,10 +188,10 @@ app.get('/api/clari-calls', async (req, res) => {
   }
 });
 
-// SFDC Accounts endpoint
+// Enhanced SFDC Accounts endpoint with search
 app.get('/api/sfdc-accounts', async (req, res) => {
   try {
-    const queryParams = new URLSearchParams(req.query).toString();
+    const queryParams = buildSearchQuery(req.query);
     const data = await proxyToSupabase('sfdc_accounts', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_accounts');
     res.json(simplifiedData);
@@ -161,10 +200,10 @@ app.get('/api/sfdc-accounts', async (req, res) => {
   }
 });
 
-// SFDC Contacts endpoint
+// Enhanced SFDC Contacts endpoint with search
 app.get('/api/sfdc-contacts', async (req, res) => {
   try {
-    const queryParams = new URLSearchParams(req.query).toString();
+    const queryParams = buildSearchQuery(req.query);
     const data = await proxyToSupabase('sfdc_contacts', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_contacts');
     res.json(simplifiedData);
@@ -173,10 +212,10 @@ app.get('/api/sfdc-contacts', async (req, res) => {
   }
 });
 
-// SFDC Leads endpoint
+// Enhanced SFDC Leads endpoint with search
 app.get('/api/sfdc-leads', async (req, res) => {
   try {
-    const queryParams = new URLSearchParams(req.query).toString();
+    const queryParams = buildSearchQuery(req.query);
     const data = await proxyToSupabase('sfdc_leads', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_leads');
     res.json(simplifiedData);
@@ -185,10 +224,10 @@ app.get('/api/sfdc-leads', async (req, res) => {
   }
 });
 
-// SFDC Opportunities endpoint
+// Enhanced SFDC Opportunities endpoint with search
 app.get('/api/sfdc-opportunities', async (req, res) => {
   try {
-    const queryParams = new URLSearchParams(req.query).toString();
+    const queryParams = buildSearchQuery(req.query);
     const data = await proxyToSupabase('sfdc_opportunities', queryParams);
     const simplifiedData = simplifyData(data, 'sfdc_opportunities');
     res.json(simplifiedData);
@@ -197,14 +236,107 @@ app.get('/api/sfdc-opportunities', async (req, res) => {
   }
 });
 
+// Relationship endpoint - get related data across tables
+app.get('/api/relationships/:type', async (req, res) => {
+  try {
+    const { type } = req.params;
+    const { account_id, contact_id, opportunity_id, call_id } = req.query;
+    
+    let results = {};
+    
+    switch (type) {
+      case 'account':
+        if (account_id) {
+          // Get account details
+          const accountData = await proxyToSupabase('sfdc_accounts', `account_id=eq.${account_id}`);
+          results.account = simplifyData(accountData, 'sfdc_accounts')[0];
+          
+          // Get related contacts
+          const contactsData = await proxyToSupabase('sfdc_contacts', `account_id=eq.${account_id}`);
+          results.contacts = simplifyData(contactsData, 'sfdc_contacts');
+          
+          // Get related opportunities
+          const opportunitiesData = await proxyToSupabase('sfdc_opportunities', `account_id=eq.${account_id}`);
+          results.opportunities = simplifyData(opportunitiesData, 'sfdc_opportunities');
+          
+          // Get related calls
+          const callsData = await proxyToSupabase('clari_calls', `crm_account_id=eq.${account_id}`);
+          results.calls = simplifyData(callsData, 'clari_calls');
+        }
+        break;
+        
+      case 'contact':
+        if (contact_id) {
+          // Get contact details
+          const contactData = await proxyToSupabase('sfdc_contacts', `contact_id=eq.${contact_id}`);
+          results.contact = simplifyData(contactData, 'sfdc_contacts')[0];
+          
+          // Get related account
+          if (results.contact?.account_id) {
+            const accountData = await proxyToSupabase('sfdc_accounts', `account_id=eq.${results.contact.account_id}`);
+            results.account = simplifyData(accountData, 'sfdc_accounts')[0];
+          }
+          
+          // Get related calls
+          const callsData = await proxyToSupabase('clari_calls', `participant_names=ilike.%${results.contact?.first_name}%`);
+          results.calls = simplifyData(callsData, 'clari_calls');
+        }
+        break;
+        
+      case 'opportunity':
+        if (opportunity_id) {
+          // Get opportunity details
+          const opportunityData = await proxyToSupabase('sfdc_opportunities', `opportunity_id=eq.${opportunity_id}`);
+          results.opportunity = simplifyData(opportunityData, 'sfdc_opportunities')[0];
+          
+          // Get related account
+          if (results.opportunity?.account_id) {
+            const accountData = await proxyToSupabase('sfdc_accounts', `account_id=eq.${results.opportunity.account_id}`);
+            results.account = simplifyData(accountData, 'sfdc_accounts')[0];
+          }
+          
+          // Get related calls
+          const callsData = await proxyToSupabase('clari_calls', `crm_deal_id=eq.${opportunity_id}`);
+          results.calls = simplifyData(callsData, 'clari_calls');
+        }
+        break;
+        
+      case 'call':
+        if (call_id) {
+          // Get call details
+          const callData = await proxyToSupabase('clari_calls', `call_id=eq.${call_id}`);
+          results.call = simplifyData(callData, 'clari_calls')[0];
+          
+          // Get related account if available
+          if (results.call?.crm_account_name) {
+            const accountData = await proxyToSupabase('sfdc_accounts', `account_name=ilike.%${results.call.crm_account_name}%`);
+            results.account = simplifyData(accountData, 'sfdc_accounts')[0];
+          }
+          
+          // Get related opportunity if available
+          if (results.call?.crm_deal_name) {
+            const opportunityData = await proxyToSupabase('sfdc_opportunities', `opportunity_name=ilike.%${results.call.crm_deal_name}%`);
+            results.opportunity = simplifyData(opportunityData, 'sfdc_opportunities')[0];
+          }
+        }
+        break;
+    }
+    
+    res.json(results);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Supabase Proxy API running on port ${PORT}`);
+  console.log(`🚀 Enhanced Supabase Proxy API running on port ${PORT}`);
   console.log(`📋 Available endpoints:`);
-  console.log(`   • GET /api/clari-calls`);
-  console.log(`   • GET /api/sfdc-accounts`);
-  console.log(`   • GET /api/sfdc-contacts`);
-  console.log(`   • GET /api/sfdc-leads`);
-  console.log(`   • GET /api/sfdc-opportunities`);
-  console.log(`\n🎯 CustomGPT compatible - simplified responses!`);
+  console.log(`   • GET /api/clari-calls (with search & filters)`);
+  console.log(`   • GET /api/sfdc-accounts (with search & filters)`);
+  console.log(`   • GET /api/sfdc-contacts (with search & filters)`);
+  console.log(`   • GET /api/sfdc-leads (with search & filters)`);
+  console.log(`   • GET /api/sfdc-opportunities (with search & filters)`);
+  console.log(`   • GET /api/relationships/:type (account/contact/opportunity/call)`);
+  console.log(`\n🎯 Enhanced for CustomGPT - search, filter, and relationships!`);
 }); 
